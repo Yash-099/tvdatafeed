@@ -27,8 +27,8 @@ class Interval(enum.Enum):
     in_daily = "1D"
     in_weekly = "1W"
     in_monthly = "1M"
-    in_3monthly = "3M"
-    in_6monthly = "6M"
+    in_3_monthly = "3M"
+    in_6_monthly = "6M"
     in_yearly = "12M"
 
 
@@ -291,6 +291,47 @@ class TvDatafeed:
                 break
 
         return self.__create_df(raw_data, symbol)
+
+    def get_all_available_bars(self, symbol: str, exchange: str = "NSE",
+                            interval: Interval = Interval.in_daily, cap: int = 5000):
+        def try_fetch(n):
+            try:
+                df = self.get_hist(symbol, exchange, interval, n_bars=n)
+                if df is None or df.empty:
+                    return None
+                return df
+            except Exception:
+                return None
+
+        # Ensure data exists
+        best_df = try_fetch(1)
+        if best_df is None:
+            raise ValueError(f"No data for {exchange}:{symbol} at interval {interval}")
+
+        best_n = 1
+        n = 64
+
+        # Exponential grow until it fails or hits cap
+        while n <= cap:
+            df = try_fetch(n)
+            if df is None:
+                break
+            best_n, best_df = n, df
+            n *= 2
+
+        # Binary search between last success and first failure (or cap)
+        lo = best_n + 1
+        hi = min(n - 1, cap)
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            df = try_fetch(mid)
+            if df is None:
+                hi = mid - 1
+            else:
+                best_n, best_df = mid, df
+                lo = mid + 1
+
+        return best_df
 
     def search_symbol(self, text: str, exchange: str = ''):
         url = self.__search_url.format(text, exchange)
